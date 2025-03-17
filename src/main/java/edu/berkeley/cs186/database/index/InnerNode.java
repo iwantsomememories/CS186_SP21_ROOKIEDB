@@ -81,8 +81,8 @@ class InnerNode extends BPlusNode {
     @Override
     public LeafNode get(DataBox key) {
         // TODO(proj2): implement
-
-        return null;
+        int index = InnerNode.numLessThanEqual(key, this.keys);
+        return getChild(index).get(key);
     }
 
     // See BPlusNode.getLeftmostLeaf.
@@ -90,16 +90,43 @@ class InnerNode extends BPlusNode {
     public LeafNode getLeftmostLeaf() {
         assert(children.size() > 0);
         // TODO(proj2): implement
-
-        return null;
+        return getChild(0).getLeftmostLeaf();
     }
 
     // See BPlusNode.put.
     @Override
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
         // TODO(proj2): implement
+        int index = numLessThanEqual(key, this.keys);
+        Optional<Pair<DataBox, Long>> res = getChild(index).put(key, rid);
 
-        return Optional.empty();
+        if (res.isEmpty()) {
+            return Optional.empty();
+        } else {
+            Pair<DataBox, Long> p = res.get();
+            this.keys.add(index, p.getFirst());
+            this.children.add(index + 1, p.getSecond());
+
+            if (this.keys.size() <= 2 * this.metadata.getOrder()) {
+                sync();
+                return Optional.empty();
+            } else {
+                int order = this.metadata.getOrder();
+
+                List<DataBox> right_keys = new ArrayList<>(this.keys.subList(order + 1, order * 2 + 1));
+                List<Long> right_children = new ArrayList<>(this.children.subList(order + 1, order * 2 + 2));
+                InnerNode right_half = new InnerNode(this.metadata, this.bufferManager,
+                        right_keys, right_children, this.treeContext);
+
+                DataBox middle_key = this.keys.get(order);
+
+                this.keys.subList(order, 2 * order + 1).clear();
+                this.children.subList(order + 1, 2 * order + 2).clear();
+                sync();
+
+                return Optional.of(new Pair<>(middle_key, right_half.getPage().getPageNum()));
+            }
+        }
     }
 
     // See BPlusNode.bulkLoad.

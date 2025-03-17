@@ -147,8 +147,7 @@ class LeafNode extends BPlusNode {
     @Override
     public LeafNode get(DataBox key) {
         // TODO(proj2): implement
-
-        return null;
+        return this;
     }
 
     // See BPlusNode.getLeftmostLeaf.
@@ -156,7 +155,7 @@ class LeafNode extends BPlusNode {
     public LeafNode getLeftmostLeaf() {
         // TODO(proj2): implement
 
-        return null;
+        return this;
     }
 
     // See BPlusNode.put.
@@ -164,7 +163,44 @@ class LeafNode extends BPlusNode {
     public Optional<Pair<DataBox, Long>> put(DataBox key, RecordId rid) {
         // TODO(proj2): implement
 
-        return Optional.empty();
+        if (this.keys.contains(key)) {
+            throw new BPlusTreeException("Duplicate keys");
+        }
+
+        int l = 0, r = this.keys.size();
+        while (l < r) {
+            int m = (l + r) >>> 1;
+            if (this.keys.get(m).compareTo(key) > 0) {
+                r = m;
+            } else {
+                l = m + 1;
+            }
+        }
+
+        this.keys.add(l, key);
+        this.rids.add(l, rid);
+
+        if (this.keys.size() <= 2 * metadata.getOrder()) {
+            sync();
+            return Optional.empty();
+        } else {
+            List<DataBox> splited_keys = this.keys.subList(this.metadata.getOrder(),
+                    2 * this.metadata.getOrder() + 1);
+            List<RecordId> splited_rids = this.rids.subList(this.metadata.getOrder(),
+                    2 * this.metadata.getOrder() + 1);
+            List<DataBox> right_keys = new ArrayList<>(splited_keys);
+            List<RecordId> right_rids = new ArrayList<>(splited_rids);
+
+            LeafNode right_half = new LeafNode(this.metadata, this.bufferManager, right_keys, right_rids,
+                     this.rightSibling, this.treeContext);
+
+            splited_keys.clear();
+            splited_rids.clear();
+            this.rightSibling = Optional.of(right_half.getPage().getPageNum());
+            sync();
+
+            return Optional.of(new Pair<>(right_half.keys.get(0), right_half.getPage().getPageNum()));
+        }
     }
 
     // See BPlusNode.bulkLoad.
