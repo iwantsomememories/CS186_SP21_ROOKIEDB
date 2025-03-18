@@ -143,6 +143,9 @@ class InnerNode extends BPlusNode {
     public void remove(DataBox key) {
         // TODO(proj2): implement
 
+        int index = numLessThanEqual(key, this.keys);
+        getChild(index).remove(key);
+
         return;
     }
 
