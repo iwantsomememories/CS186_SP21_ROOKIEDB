@@ -298,6 +298,28 @@ public class BPlusTree {
         // Note: You should NOT update the root variable directly.
         // Use the provided updateRoot() helper method to change
         // the tree's root if the old root splits.
+        if (this.root.getLeftmostLeaf() != this.root ||
+                !this.root.getLeftmostLeaf().getKeys().isEmpty()) {
+            throw new BPlusTreeException("The root isn't empty");
+        }
+
+        while (data.hasNext()) {
+            Optional<Pair<DataBox, Long>> res = this.root.bulkLoad(data, fillFactor);
+            if (res.isPresent()) {
+                Pair<DataBox, Long> p = res.get();
+
+                List<DataBox> parent_keys = new ArrayList<>();
+                parent_keys.add(p.getFirst());
+                List<Long> parent_children = new ArrayList<>();
+                parent_children.add(this.root.getPage().getPageNum());
+                parent_children.add(p.getSecond());
+
+                InnerNode new_root = new InnerNode(this.metadata, this.bufferManager,
+                        parent_keys, parent_children, this.lockContext);
+
+                updateRoot(new_root);
+            }
+        }
 
         return;
     }
