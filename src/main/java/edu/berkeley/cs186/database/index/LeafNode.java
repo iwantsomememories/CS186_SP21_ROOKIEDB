@@ -209,31 +209,33 @@ class LeafNode extends BPlusNode {
             float fillFactor) {
         // TODO(proj2): implement
         // Broke implementation
-        if (data.hasNext()) {
-            int limit = (int)Math.ceil(this.metadata.getOrder() * 2 * fillFactor);
+        int limit = (int)Math.ceil(this.metadata.getOrder() * 2 * fillFactor);
+        while (data.hasNext() && this.keys.size() <= limit) {
             Pair<DataBox, RecordId> p = data.next();
 
-            if (this.keys.size() < limit) {
-                this.keys.add(p.getFirst());
-                this.rids.add(p.getSecond());
-                sync();
-
-                return Optional.empty();
-            } else {
-                List<DataBox> new_keys = new ArrayList<>();
-                List<RecordId> new_rids = new ArrayList<>();
-                new_keys.add(p.getFirst());
-                new_rids.add(p.getSecond());
-                LeafNode right = new LeafNode(this.metadata, this.bufferManager,
-                        new_keys, new_rids, Optional.empty(), this.treeContext);
-                this.rightSibling = Optional.of(right.getPage().getPageNum());
-                sync();
-
-                return Optional.of(new Pair<>(p.getFirst(), right.getPage().getPageNum()));
-            }
+            this.keys.add(p.getFirst());
+            this.rids.add(p.getSecond());
         }
 
-        return Optional.empty();
+        if (this.keys.size() > limit) {
+            List<DataBox> new_keys = new ArrayList<>();
+            List<RecordId> new_rids = new ArrayList<>();
+            new_keys.add(this.keys.get(limit));
+            new_rids.add(this.rids.get(limit));
+            LeafNode right = new LeafNode(this.metadata, this.bufferManager,
+                    new_keys, new_rids, Optional.empty(), this.treeContext);
+
+            this.keys.remove(limit);
+            this.rids.remove(limit);
+            this.rightSibling = Optional.of(right.getPage().getPageNum());
+            sync();
+
+            return Optional.of(new Pair<>(right.getKeys().get(0), right.getPage().getPageNum()));
+        } else {
+            sync();
+
+            return Optional.empty();
+        }
     }
 
     // See BPlusNode.remove.
