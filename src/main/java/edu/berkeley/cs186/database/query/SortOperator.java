@@ -87,13 +87,23 @@ public class SortOperator extends QueryOperator {
      */
     public Run sortRun(Iterator<Record> records) {
         // TODO(proj3_part1): implement
-        return null;
+        ArrayList<Record> list = new ArrayList<>();
+
+        while (records.hasNext()) {
+           list.add(records.next());
+        }
+        list.sort(new RecordComparator());
+
+        Run sortedRun = makeRun();
+        sortedRun.addAll(list);
+
+        return sortedRun;
     }
 
     /**
      * Given a list of sorted runs, returns a new run that is the result of
      * merging the input runs. You should use a Priority Queue (java.util.PriorityQueue)
-     * to determine which record should be should be added to the output run
+     * to determine which record should be added to the output run
      * next.
      *
      * You are NOT allowed to have more than runs.size() records in your
@@ -108,7 +118,32 @@ public class SortOperator extends QueryOperator {
     public Run mergeSortedRuns(List<Run> runs) {
         assert (runs.size() <= this.numBuffers - 1);
         // TODO(proj3_part1): implement
-        return null;
+
+        PriorityQueue<Pair<Record, Integer>> pq = new PriorityQueue<>(new RecordPairComparator());
+        ArrayList<Iterator<Record>> iterators = new ArrayList<>();
+        Run mergeRun = makeRun();
+
+        for (Run run : runs) {
+            iterators.add(run.iterator());
+        }
+
+        for (int i = 0; i < iterators.size(); i++) {
+            if (iterators.get(i).hasNext()) {
+                pq.add(new Pair<>(iterators.get(i).next(), i));
+            }
+        }
+
+        while (!pq.isEmpty()) {
+            Pair<Record, Integer> pair = pq.poll();
+            mergeRun.add(pair.getFirst());
+
+            int index = pair.getSecond();
+            if (iterators.get(index).hasNext()) {
+                pq.add(new Pair<>(iterators.get(index).next(), index));
+            }
+        }
+
+        return mergeRun;
     }
 
     /**
@@ -133,7 +168,14 @@ public class SortOperator extends QueryOperator {
      */
     public List<Run> mergePass(List<Run> runs) {
         // TODO(proj3_part1): implement
-        return Collections.emptyList();
+
+        List<Run> mergeRuns = new ArrayList<>();
+        for (int start = 0; start < runs.size(); start += this.numBuffers - 1) {
+            int end = Math.min(start + this.numBuffers - 1, runs.size());
+            mergeRuns.add(mergeSortedRuns(runs.subList(start, end)));
+        }
+
+        return mergeRuns;
     }
 
     /**
