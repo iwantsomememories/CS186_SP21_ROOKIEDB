@@ -94,10 +94,7 @@ public class SortOperator extends QueryOperator {
         }
         list.sort(new RecordComparator());
 
-        Run sortedRun = makeRun();
-        sortedRun.addAll(list);
-
-        return sortedRun;
+        return makeRun(list);
     }
 
     /**
@@ -189,9 +186,20 @@ public class SortOperator extends QueryOperator {
     public Run sort() {
         // Iterator over the records of the relation we want to sort
         Iterator<Record> sourceIterator = getSource().iterator();
+        List<Run> sortedRuns = new ArrayList<>();
+
+        // initial partition
+        while (sourceIterator.hasNext()) {
+            sortedRuns.add(sortRun(QueryOperator.getBlockIterator(sourceIterator, getSource().getSchema(), this.numBuffers)));
+        }
+
+        // merge phase
+        while (sortedRuns.size() > 1) {
+            sortedRuns = mergePass(sortedRuns);
+        }
 
         // TODO(proj3_part1): implement
-        return makeRun(); // TODO(proj3_part1): replace this!
+        return sortedRuns.get(0); // TODO(proj3_part1): replace this!
     }
 
     /**
