@@ -140,12 +140,11 @@ public class SortMergeOperator extends JoinOperator {
          */
         private Record fetchNextRecord() {
             // TODO(proj3_part1): implement
-
-            if (leftRecord == null) {
-                return null;
-            }
-
             while (true) {
+                if (leftRecord == null || (rightRecord == null && !marked)) {
+                    return null;
+                }
+
                 if (!marked) {
                     while (leftRecord.getValue(getLeftColumnIndex()).compareTo(rightRecord.getValue(getRightColumnIndex())) < 0) {
                         advance(true);
@@ -162,6 +161,7 @@ public class SortMergeOperator extends JoinOperator {
                     }
 
                     rightIterator.markPrev();
+                    marked = true;
                 }
 
                 if (rightRecord != null && leftRecord.getValue(getLeftColumnIndex()).compareTo(rightRecord.getValue(getRightColumnIndex())) == 0) {
