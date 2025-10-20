@@ -662,6 +662,44 @@ public class QueryPlan {
         //      calculate the cheapest join with the new table (the one you
         //      fetched an operator for from pass1Map) and the previously joined
         //      tables. Then, update the result map if needed.
+
+        for (Map.Entry<Set<String>, QueryOperator> entry : prevMap.entrySet()) {
+            Set<String> prevTables = entry.getKey();
+            QueryOperator prevOp = entry.getValue();
+
+            for (JoinPredicate join : this.joinPredicates) {
+                if (prevTables.contains(join.leftTable) && prevTables.contains(join.rightTable)) {
+                    continue;
+                } else if (prevTables.contains(join.leftTable)) {
+                    QueryOperator singleTableOp = pass1Map.get(Collections.singleton(join.rightTable));
+                    QueryOperator joinOp = minCostJoinType(prevOp, singleTableOp, join.leftColumn, join.rightColumn);
+
+                    Set<String> nextPassTables = new HashSet<>(prevTables);
+                    nextPassTables.add(join.rightTable);
+                    if (result.containsKey(nextPassTables)) {
+                        if (result.get(nextPassTables).estimateIOCost() > joinOp.estimateIOCost()) {
+                            result.put(nextPassTables, joinOp);
+                        }
+                    } else {
+                        result.put(nextPassTables, joinOp);
+                    }
+                } else if (prevTables.contains(join.rightTable)) {
+                    QueryOperator singleTableOp = pass1Map.get(Collections.singleton(join.leftTable));
+                    QueryOperator joinOp = minCostJoinType(prevOp, singleTableOp, join.rightColumn, join.leftColumn);
+
+                    Set<String> nextPassTables = new HashSet<>(prevTables);
+                    nextPassTables.add(join.leftTable);
+                    if (result.containsKey(nextPassTables)) {
+                        if (result.get(nextPassTables).estimateIOCost() > joinOp.estimateIOCost()) {
+                            result.put(nextPassTables, joinOp);
+                        }
+                    } else {
+                        result.put(nextPassTables, joinOp);
+                    }
+                }
+            }
+        }
+
         return result;
     }
 
