@@ -59,7 +59,17 @@ public class LockManager {
          */
         public boolean checkCompatible(LockType lockType, long except) {
             // TODO(proj4_part1): implement
-            return false;
+            for (Lock lock : locks) {
+                if (lock.transactionNum == except) {
+                    continue;
+                }
+
+                if (!LockType.compatible(lock.lockType, lockType)) {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         /**
@@ -69,7 +79,14 @@ public class LockManager {
          */
         public void grantOrUpdateLock(Lock lock) {
             // TODO(proj4_part1): implement
-            return;
+            for (int i = 0; i < locks.size(); i++) {
+                if (Objects.equals(locks.get(i).transactionNum, lock.transactionNum)) {
+                    locks.set(i, lock);
+                    return;
+                }
+            }
+
+            locks.add(lock);
         }
 
         /**
@@ -78,6 +95,10 @@ public class LockManager {
          */
         public void releaseLock(Lock lock) {
             // TODO(proj4_part1): implement
+            if (locks.remove(lock)) {
+                // todo
+            }
+
             return;
         }
 
@@ -87,7 +108,11 @@ public class LockManager {
          */
         public void addToQueue(LockRequest request, boolean addFront) {
             // TODO(proj4_part1): implement
-            return;
+            if (addFront) {
+                waitingQueue.addFirst(request);
+            } else {
+                waitingQueue.addLast(request);
+            }
         }
 
         /**
@@ -99,6 +124,9 @@ public class LockManager {
             Iterator<LockRequest> requests = waitingQueue.iterator();
 
             // TODO(proj4_part1): implement
+
+
+
             return;
         }
 
