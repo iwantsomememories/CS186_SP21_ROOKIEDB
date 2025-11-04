@@ -82,11 +82,13 @@ public class LockManager {
             for (int i = 0; i < locks.size(); i++) {
                 if (Objects.equals(locks.get(i).transactionNum, lock.transactionNum)) {
                     locks.set(i, lock);
+                    addOrUpdateLockOfTransaction(lock);
                     return;
                 }
             }
 
             locks.add(lock);
+            addOrUpdateLockOfTransaction(lock);
         }
 
         /**
@@ -96,6 +98,7 @@ public class LockManager {
         public void releaseLock(Lock lock) {
             // TODO(proj4_part1): implement
             locks.remove(lock);
+            removeLockOfTransaction(lock);
             processQueue();
         }
 
@@ -229,7 +232,8 @@ public class LockManager {
             }
 
             if (resourceEntry.checkCompatible(lockType, transNum)) {
-                resourceEntry.grantOrUpdateLock(new Lock(name, lockType, transNum));
+                Lock newLock = new Lock(name, lockType, transNum);
+                resourceEntry.grantOrUpdateLock(newLock);
 
                 for (Lock releasedLock : releasedLocks) {
                     ResourceEntry releaseResourceEntry = getResourceEntry(releasedLock.name);
@@ -413,5 +417,30 @@ public class LockManager {
      */
     public synchronized LockContext databaseContext() {
         return context("database");
+    }
+
+    private void removeLockOfTransaction(Lock lock) {
+        if (transactionLocks.containsKey(lock.transactionNum)) {
+            transactionLocks.get(lock.transactionNum).remove(lock);
+        }
+    }
+
+    private void addOrUpdateLockOfTransaction(Lock lock) {
+        List<Lock> locks = transactionLocks.getOrDefault(lock.transactionNum, new ArrayList<>());
+        int index = 0;
+        while (index < locks.size()) {
+            if (locks.get(index).name.equals(lock.name)) {
+                break;
+            }
+            index++;
+        }
+
+        if (index < locks.size()) {
+            locks.set(index, lock);
+        } else {
+            locks.add(lock);
+        }
+
+        transactionLocks.put(lock.transactionNum, locks);
     }
 }
