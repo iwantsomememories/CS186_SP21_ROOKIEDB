@@ -38,6 +38,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Phaser;
 import java.util.function.Function;
 import java.util.function.UnaryOperator;
+import java.util.stream.Collectors;
 
 /**
  * Database objects keeps track of transactions, tables, and indices
@@ -926,7 +927,16 @@ public class Database implements AutoCloseable {
         public void close() {
             try {
                 // TODO(proj4_part2)
-                return;
+                 List<LockContext> releaseContexts = lockManager.getLocks(this).stream()
+                        .map(lock -> LockContext.fromResourceName(lockManager, lock.name))
+                        .sorted(Comparator.comparingInt(t -> t.getNumChildren(this)))
+                        .collect(Collectors.toList());
+
+                 for (LockContext releaseContext : releaseContexts) {
+                     System.out.printf("[Transaction %d] release %s, numChildrenLocks: %d\n",
+                             getTransNum(), releaseContext.getResourceName().toString(), releaseContext.getNumChildren(this));
+                     releaseContext.release(this);
+                 }
             } catch (Exception e) {
                 // There's a chance an error message from your release phase
                 // logic can get suppressed. This guarantees that the stack
