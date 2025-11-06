@@ -54,7 +54,6 @@ public class LockUtil {
         } else {
             ensureAncestorLockHeld(transaction, parentContext, actualNeededLockType);
             if (explicitLockType.isIntent()) {
-                // todo
                 if (LockType.canBeParentLock(explicitLockType, actualNeededLockType)) {
                     lockContext.escalate(transaction);
                 } else {

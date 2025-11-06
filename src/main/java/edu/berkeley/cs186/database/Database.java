@@ -929,14 +929,32 @@ public class Database implements AutoCloseable {
                 // TODO(proj4_part2)
                  List<LockContext> releaseContexts = lockManager.getLocks(this).stream()
                         .map(lock -> LockContext.fromResourceName(lockManager, lock.name))
-                        .sorted(Comparator.comparingInt(t -> t.getNumChildren(this)))
                         .collect(Collectors.toList());
 
-                 for (LockContext releaseContext : releaseContexts) {
-                     System.out.printf("[Transaction %d] release %s, numChildrenLocks: %d\n",
-                             getTransNum(), releaseContext.getResourceName().toString(), releaseContext.getNumChildren(this));
-                     releaseContext.release(this);
-                 }
+                 Queue<LockContext> queue = new LinkedList<>();
+                 Map<ResourceName, Boolean> visited = new HashMap<>();
+                for (LockContext releaseContext : releaseContexts) {
+                    if (releaseContext.getNumChildren(this) == 0) {
+                        queue.add(releaseContext);
+                    }
+
+                    visited.put(releaseContext.getResourceName(), false);
+                }
+
+                while (!queue.isEmpty()) {
+                    LockContext lockContext = queue.poll();
+                    visited.put(lockContext.getResourceName(), true);
+                    lockContext.release(this);
+
+                    LockContext parentContext = lockContext.parentContext();
+                    if (parentContext != null) {
+                        if (visited.containsKey(parentContext.getResourceName()) &&
+                                !visited.get(parentContext.getResourceName()) &&
+                                parentContext.getNumChildren(this) == 0) {
+                            queue.add(parentContext);
+                        }
+                    }
+                }
             } catch (Exception e) {
                 // There's a chance an error message from your release phase
                 // logic can get suppressed. This guarantees that the stack

@@ -118,7 +118,7 @@ public class LockContext {
 
             if (LockType.canBeParentLock(parentLockType, lockType)) {
                 lockman.acquire(transaction, name, lockType);
-                parentContext.numChildLocks.merge(transaction.getTransNum(), 1, (oldValue, newValue) -> oldValue + 1);
+                parentContext.incNumChildren(transaction.getTransNum());
             } else {
                 throw new InvalidLockException(String.format("[Transaction %d] doesn't has permission to acquire %s lock on %s.",
                         transaction.getTransNum(), lockType, name.toString()));
@@ -158,7 +158,7 @@ public class LockContext {
                 if (parentContext.getNumChildren(transaction) <= 0) {
                     throw new RuntimeException("numChildLock Error");
                 }
-                parentContext.numChildLocks.computeIfPresent(transaction.getTransNum(), (k, oldValue) -> oldValue - 1);
+                parentContext.decNumChildren(transaction.getTransNum());
             }
         } else {
             throw new InvalidLockException(String.format("[Transaction %d] can't release lock on %s, due to %d childrenLocks.",
@@ -228,7 +228,7 @@ public class LockContext {
                 LockContext context = fromResourceName(lockman, resourceName);
                 LockContext pcontext = context.parentContext();
                 if (pcontext.getNumChildren(transaction) > 0) {
-                    pcontext.numChildLocks.computeIfPresent(transaction.getTransNum(), (k, oldV) -> oldV - 1);
+                    pcontext.decNumChildren(transaction.getTransNum());
                 }
 
                 context.numChildLocks.remove(transaction.getTransNum());
@@ -309,8 +309,7 @@ public class LockContext {
                 requiredLockType = LockType.X;
             }
 
-            releaseResourceNames.add(name);
-            lockman.acquireAndRelease(transaction, name, requiredLockType, releaseResourceNames);
+            lockman.promote(transaction, name, requiredLockType);
         }
     }
 
@@ -439,6 +438,23 @@ public class LockContext {
      */
     public int getNumChildren(TransactionContext transaction) {
         return numChildLocks.getOrDefault(transaction.getTransNum(), 0);
+    }
+
+    private void decNumChildren(long transNum) {
+        if (numChildLocks.getOrDefault(transNum, 0) <= 0) {
+            throw new RuntimeException(String.format("[Transaction %d] numChildren of %s shouldn't be less or equal to zero.",
+                    transNum, name.toString()));
+        }
+
+        numChildLocks.put(transNum, numChildLocks.get(transNum) - 1);
+    }
+
+    private void incNumChildren(long transNum) {
+        if (numChildLocks.containsKey(transNum)) {
+            numChildLocks.put(transNum, numChildLocks.get(transNum) + 1);
+        } else {
+            numChildLocks.put(transNum, 1);
+        }
     }
 
     @Override
