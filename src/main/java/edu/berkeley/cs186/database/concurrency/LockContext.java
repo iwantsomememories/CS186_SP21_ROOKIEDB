@@ -220,16 +220,19 @@ public class LockContext {
                         transaction.getTransNum()));
             }
 
-            lockman.promote(transaction, name, newLockType);
-            List<ResourceName> sisDescendants = sisDescendants(transaction);
-            sisDescendants.stream()
-                    .map(name -> LockContext.fromResourceName(lockman, name))
-                    .sorted(new Comparator<LockContext>() {
-                        @Override
-                        public int compare(LockContext lockContext, LockContext t1) {
-                            return lockContext.getNumChildren(transaction) - t1.getNumChildren(transaction);
-                        }
-                    }).forEach(lockContext -> lockContext.release(transaction));
+            List<ResourceName> releaseNames = sisDescendants(transaction);
+            releaseNames.add(name);
+            lockman.acquireAndRelease(transaction, name, newLockType, releaseNames);
+
+            releaseNames.forEach(resourceName -> {
+                LockContext context = fromResourceName(lockman, resourceName);
+                LockContext pcontext = context.parentContext();
+                if (pcontext.getNumChildren(transaction) > 0) {
+                    pcontext.numChildLocks.computeIfPresent(transaction.getTransNum(), (k, oldV) -> oldV - 1);
+                }
+
+                context.numChildLocks.remove(transaction.getTransNum());
+            });
         } else {
             lockman.promote(transaction, name, newLockType);
         }
