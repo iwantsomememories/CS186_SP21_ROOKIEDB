@@ -110,16 +110,15 @@ public class LockContext {
                     transaction.getTransNum(), implicitLockType, name.toString()));
         }
 
-        if (name.parent() == null) {
+        LockContext parentContext = parentContext();
+        if (parentContext == null) {
             lockman.acquire(transaction, name, lockType);
         } else {
-            Pair<LockContext, LockType> ancestorWithLock = nearestAncestorWithLock(transaction);
-            LockContext ancestor = ancestorWithLock.getFirst();
-            LockType ancestorLockType = ancestorWithLock.getSecond();
+            LockType parentLockType = parentContext.getExplicitLockType(transaction);
 
-            if (LockType.substitutable(ancestorLockType, LockType.parentLock(lockType))) {
+            if (LockType.canBeParentLock(parentLockType, lockType)) {
                 lockman.acquire(transaction, name, lockType);
-                ancestor.numChildLocks.merge(transaction.getTransNum(), 1, (oldValue, newValue) -> oldValue + 1);
+                parentContext.numChildLocks.merge(transaction.getTransNum(), 1, (oldValue, newValue) -> oldValue + 1);
             } else {
                 throw new InvalidLockException(String.format("[Transaction %d] doesn't has permission to acquire %s lock on %s.",
                         transaction.getTransNum(), lockType, name.toString()));
@@ -145,30 +144,25 @@ public class LockContext {
             throw new UnsupportedOperationException();
         }
 
-        LockType oldLockType = lockman.getLockType(transaction, name);
+        LockType oldLockType = getExplicitLockType(transaction);
         if (oldLockType == LockType.NL) {
             throw new NoLockHeldException(String.format("[Transaction %d] doesn't hold lock on %s.",
                     transaction.getTransNum(), name.toString()));
         }
 
         int childrenLocks = getNumChildren(transaction);
-        Pair<LockContext, LockType> ancestorWithLock = nearestAncestorWithLock(transaction);
-        LockContext ancestor = ancestorWithLock.getFirst();
+        LockContext parentContext = parentContext();
         if (childrenLocks == 0) {
             lockman.release(transaction, name);
-            if (ancestor != null) {
-                if (ancestor.getNumChildren(transaction) <= 0) {
+            if (parentContext != null) {
+                if (parentContext.getNumChildren(transaction) <= 0) {
                     throw new RuntimeException("numChildLock Error");
                 }
-                ancestor.numChildLocks.computeIfPresent(transaction.getTransNum(), (k, oldValue) -> oldValue - 1);
+                parentContext.numChildLocks.computeIfPresent(transaction.getTransNum(), (k, oldValue) -> oldValue - 1);
             }
-        } else if (ancestor == null) {
+        } else {
             throw new InvalidLockException(String.format("[Transaction %d] can't release lock on %s, due to %d childrenLocks.",
                     transaction.getTransNum(), name.toString(), childrenLocks));
-        } else {
-           lockman.release(transaction, name);
-           ancestor.numChildLocks.computeIfPresent(transaction.getTransNum(), (k, oldValue) -> oldValue - 1 + childrenLocks);
-           this.numChildLocks.remove(transaction.getTransNum());
         }
     }
 
@@ -214,12 +208,10 @@ public class LockContext {
                     transaction.getTransNum(), newLockType, oldLockType));
         }
 
-        Pair<LockContext, LockType> ancestorWithLock = nearestAncestorWithLock(transaction);
-        LockContext ancestor = ancestorWithLock.getFirst();
-        LockType ancestorLockType = ancestorWithLock.getSecond();
-        if (name.parent() != null && !LockType.substitutable(ancestorLockType, LockType.parentLock(newLockType))) {
+        LockContext parentContext = parentContext();
+        if (parentContext != null && !LockType.canBeParentLock(parentContext.getExplicitLockType(transaction), newLockType)) {
             throw new InvalidLockException(String.format("[Transaction %d] can't promote to %s on %s due to parent lock %s on %s.",
-                    transaction.getTransNum(), newLockType, name.toString(), ancestorLockType, ancestor.name.toString()));
+                    transaction.getTransNum(), newLockType, name.toString(), parentContext.getExplicitLockType(transaction), parentContext.name.toString()));
         }
 
         if (newLockType == LockType.SIX) {
@@ -359,7 +351,7 @@ public class LockContext {
         } else if (LockType.substitutable(explicitLock, implicitLock)) {
             return explicitLock;
         } else {
-            return explicitLock;
+            return LockType.SIX;
         }
     }
 
@@ -444,20 +436,6 @@ public class LockContext {
      */
     public int getNumChildren(TransactionContext transaction) {
         return numChildLocks.getOrDefault(transaction.getTransNum(), 0);
-    }
-
-    public Pair<LockContext, LockType> nearestAncestorWithLock(TransactionContext transaction) {
-        LockContext parentLockContext = parentContext();
-        LockType parentLockType = parentLockContext == null ?
-                LockType.NL : lockman.getLockType(transaction, parentLockContext.name);
-        while (parentLockContext != null && parentLockType == LockType.NL) {
-            parentLockContext = parentLockContext.parentContext();
-            if (parentLockContext != null) {
-                parentLockType = lockman.getLockType(transaction, parentLockContext.name);
-            }
-        }
-
-        return new Pair<>(parentLockContext, parentLockType);
     }
 
     @Override
