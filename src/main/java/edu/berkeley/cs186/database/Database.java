@@ -932,25 +932,22 @@ public class Database implements AutoCloseable {
                         .collect(Collectors.toList());
 
                  Queue<LockContext> queue = new LinkedList<>();
-                 Map<ResourceName, Boolean> visited = new HashMap<>();
+                 Set<ResourceName> releaseNames = new HashSet<>();
                 for (LockContext releaseContext : releaseContexts) {
                     if (releaseContext.getNumChildren(this) == 0) {
                         queue.add(releaseContext);
                     }
 
-                    visited.put(releaseContext.getResourceName(), false);
+                    releaseNames.add(releaseContext.getResourceName());
                 }
 
                 while (!queue.isEmpty()) {
                     LockContext lockContext = queue.poll();
-                    visited.put(lockContext.getResourceName(), true);
                     lockContext.release(this);
 
                     LockContext parentContext = lockContext.parentContext();
                     if (parentContext != null) {
-                        if (visited.containsKey(parentContext.getResourceName()) &&
-                                !visited.get(parentContext.getResourceName()) &&
-                                parentContext.getNumChildren(this) == 0) {
+                        if (releaseNames.contains(parentContext.getResourceName()) && parentContext.getNumChildren(this) == 0) {
                             queue.add(parentContext);
                         }
                     }

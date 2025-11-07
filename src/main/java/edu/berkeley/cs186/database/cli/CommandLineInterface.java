@@ -41,10 +41,10 @@ public class CommandLineInterface {
         System.out.printf("\nWelcome to RookieDB (v%d.%d.%d-%s)\n", version[0], version[1], version[2], label);
 
         // Basic database for project 0 through 3
-        Database db = new Database("demo", 25);
+        // Database db = new Database("demo", 25);
         
         // Use the following after completing project 4 (locking)
-        // Database db = new Database("demo", 25, new LockManager());
+        Database db = new Database("demo", 25, new LockManager());
         
         // Use the following after completing project 5 (recovery)
         // Database db = new Database("demo", 25, new LockManager(), new ClockEvictionPolicy(), true);
