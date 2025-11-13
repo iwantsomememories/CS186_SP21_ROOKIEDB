@@ -93,7 +93,16 @@ public class ARIESRecoveryManager implements RecoveryManager {
     @Override
     public long commit(long transNum) {
         // TODO(proj5): implement
-        return -1L;
+        TransactionTableEntry tte = this.transactionTable.get(transNum);
+        CommitTransactionLogRecord commitRecord = new CommitTransactionLogRecord(transNum, tte.lastLSN);
+
+        long lsn = this.logManager.appendToLog(commitRecord);
+        this.logManager.flushToLSN(lsn);
+
+        tte.lastLSN = lsn;
+        tte.transaction.setStatus(Transaction.Status.COMMITTING);
+
+        return lsn;
     }
 
     /**
@@ -109,7 +118,14 @@ public class ARIESRecoveryManager implements RecoveryManager {
     @Override
     public long abort(long transNum) {
         // TODO(proj5): implement
-        return -1L;
+        TransactionTableEntry tte = this.transactionTable.get(transNum);
+        AbortTransactionLogRecord abortRecord = new AbortTransactionLogRecord(transNum, tte.lastLSN);
+
+        long lsn = this.logManager.appendToLog(abortRecord);
+        tte.lastLSN = lsn;
+        tte.transaction.setStatus(Transaction.Status.ABORTING);
+
+        return lsn;
     }
 
     /**
@@ -127,7 +143,18 @@ public class ARIESRecoveryManager implements RecoveryManager {
     @Override
     public long end(long transNum) {
         // TODO(proj5): implement
-        return -1L;
+        TransactionTableEntry tte = transactionTable.get(transNum);
+        if (tte.transaction.getStatus().equals(Transaction.Status.ABORTING)) {
+            rollbackToLSN(transNum, 0L);
+        }
+
+        EndTransactionLogRecord endTransactionLogRecord = new EndTransactionLogRecord(transNum, tte.lastLSN);
+        logManager.appendToLog(endTransactionLogRecord);
+        tte.lastLSN = endTransactionLogRecord.getLSN();
+        tte.transaction.setStatus(Transaction.Status.COMPLETE);
+        transactionTable.remove(transNum);
+
+        return endTransactionLogRecord.getLSN();
     }
 
     /**
@@ -155,6 +182,17 @@ public class ARIESRecoveryManager implements RecoveryManager {
         // back from the next record that hasn't yet been undone.
         long currentLSN = lastRecord.getUndoNextLSN().orElse(lastRecordLSN);
         // TODO(proj5) implement the rollback logic described above
+        while (currentLSN > LSN) {
+            LogRecord currentRecord = logManager.fetchLogRecord(currentLSN);
+            if (currentRecord.isUndoable()) {
+                LogRecord clr = currentRecord.undo(transactionTable.get(transNum).lastLSN);
+                logManager.appendToLog(clr);
+                transactionEntry.lastLSN = clr.getLSN();
+                clr.redo(this, this.diskSpaceManager, this.bufferManager);
+            }
+
+            currentLSN = currentRecord.getPrevLSN().orElse(-1L);
+        }
     }
 
     /**
