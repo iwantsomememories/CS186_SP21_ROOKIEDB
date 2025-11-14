@@ -94,6 +94,7 @@ public class ARIESRecoveryManager implements RecoveryManager {
     public long commit(long transNum) {
         // TODO(proj5): implement
         TransactionTableEntry tte = this.transactionTable.get(transNum);
+        assert (tte != null);
         CommitTransactionLogRecord commitRecord = new CommitTransactionLogRecord(transNum, tte.lastLSN);
 
         long lsn = this.logManager.appendToLog(commitRecord);
@@ -119,6 +120,7 @@ public class ARIESRecoveryManager implements RecoveryManager {
     public long abort(long transNum) {
         // TODO(proj5): implement
         TransactionTableEntry tte = this.transactionTable.get(transNum);
+        assert (tte != null);
         AbortTransactionLogRecord abortRecord = new AbortTransactionLogRecord(transNum, tte.lastLSN);
 
         long lsn = this.logManager.appendToLog(abortRecord);
@@ -144,6 +146,7 @@ public class ARIESRecoveryManager implements RecoveryManager {
     public long end(long transNum) {
         // TODO(proj5): implement
         TransactionTableEntry tte = transactionTable.get(transNum);
+        assert (tte != null);
         if (tte.transaction.getStatus().equals(Transaction.Status.ABORTING)) {
             rollbackToLSN(transNum, 0L);
         }
@@ -243,7 +246,17 @@ public class ARIESRecoveryManager implements RecoveryManager {
         assert (before.length == after.length);
         assert (before.length <= BufferManager.EFFECTIVE_PAGE_SIZE / 2);
         // TODO(proj5): implement
-        return -1L;
+        TransactionTableEntry tte = transactionTable.get(transNum);
+        assert (tte != null);
+
+        UpdatePageLogRecord updatePageLogRecord = new UpdatePageLogRecord(transNum, pageNum, tte.lastLSN, pageOffset, before, after);
+        long LSN = logManager.appendToLog(updatePageLogRecord);
+        tte.lastLSN = LSN;
+        if (!dirtyPageTable.containsKey(pageNum)) {
+            dirtyPageTable.put(pageNum, LSN);
+        }
+
+        return LSN;
     }
 
     /**
