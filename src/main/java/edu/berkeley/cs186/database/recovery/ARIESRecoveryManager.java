@@ -716,6 +716,58 @@ public class ARIESRecoveryManager implements RecoveryManager {
      */
     void restartRedo() {
         // TODO(proj5): implement
+        long startLSN = Long.MAX_VALUE;
+
+        for (long lsn : dirtyPageTable.values()) {
+            if (lsn < startLSN) {
+                startLSN = lsn;
+            }
+        }
+
+        if (startLSN != Long.MAX_VALUE) {
+            Iterator<LogRecord> iterator = logManager.scanFrom(startLSN);
+            while (iterator.hasNext()) {
+                LogRecord logRecord = iterator.next();
+                if (logRecord.isUndoable()) {
+                    LogType logType = logRecord.getType();
+                    switch (logType) {
+                        case ALLOC_PART:
+                        case UNDO_ALLOC_PART:
+                        case FREE_PART:
+                        case UNDO_FREE_PART:
+                        case ALLOC_PAGE:
+                        case UNDO_FREE_PAGE:
+                            logRecord.redo(this, diskSpaceManager, bufferManager);
+                            break;
+                        case UPDATE_PAGE:
+                        case UNDO_UPDATE_PAGE:
+                        case UNDO_ALLOC_PAGE:
+                        case FREE_PAGE:
+                            long pageNum = logRecord.getPageNum().get();
+                            if (dirtyPageTable.containsKey(pageNum) && dirtyPageTable.get(pageNum) <= logRecord.getLSN()) {
+                                boolean needRedo = false;
+
+                                Page page = bufferManager.fetchPage(new DummyLockContext(), pageNum);
+                                try {
+                                    if (page.getPageLSN() < logRecord.getLSN()) {
+                                        needRedo = true;
+                                    }
+                                } finally {
+                                    page.unpin();
+                                }
+
+                                if (needRedo) {
+                                    logRecord.redo(this, diskSpaceManager, bufferManager);
+                                }
+                            }
+                            break;
+                        default:
+                            break;
+                    }
+                }
+            }
+        }
+
         return;
     }
 
