@@ -590,6 +590,115 @@ public class ARIESRecoveryManager implements RecoveryManager {
         // Set of transactions that have completed
         Set<Long> endedTransactions = new HashSet<>();
         // TODO(proj5): implement
+
+        Iterator<LogRecord> iterator = logManager.scanFrom(LSN);
+        while (iterator.hasNext()) {
+            LogRecord logRecord = iterator.next();
+            LogType logType = logRecord.getType();
+
+            if (logType == LogType.BEGIN_CHECKPOINT) {
+                continue;
+            } else if (logType == LogType.END_CHECKPOINT) {
+                Map<Long, Long> chDpt = logRecord.getDirtyPageTable();
+                Map<Long, Pair<Transaction.Status, Long>> chTxnpt = logRecord.getTransactionTable();
+
+                dirtyPageTable.putAll(chDpt);
+
+                for (Map.Entry<Long, Pair<Transaction.Status, Long>> entry : chTxnpt.entrySet()) {
+                    if (!endedTransactions.contains(entry.getKey())) {
+                        if (!transactionTable.containsKey(entry.getKey())) {
+                            TransactionTableEntry tte = new TransactionTableEntry(newTransaction.apply(entry.getKey()));
+                            tte.transaction.setStatus(entry.getValue().getFirst());
+                            tte.lastLSN = entry.getValue().getSecond();
+                            transactionTable.put(entry.getKey(), tte);
+                        } else {
+                            TransactionTableEntry tte = transactionTable.get(entry.getKey());
+                            if (tte.lastLSN < entry.getValue().getSecond()) {
+                                tte.lastLSN = entry.getValue().getSecond();
+                            }
+
+                            if (tte.transaction.getStatus() == Transaction.Status.RUNNING) {
+                                if (entry.getValue().getFirst() == Transaction.Status.COMMITTING) {
+                                    tte.transaction.setStatus(Transaction.Status.COMMITTING);
+                                } else if (entry.getValue().getFirst() == Transaction.Status.ABORTING) {
+                                    tte.transaction.setStatus(Transaction.Status.RECOVERY_ABORTING);
+                                }
+                            }
+                        }
+                    }
+                }
+            } else {
+                if (logRecord.getTransNum().isPresent()) {
+                    long transNum = logRecord.getTransNum().get();
+                    if (transactionTable.containsKey(transNum)) {
+                        transactionTable.get(transNum).lastLSN = logRecord.getLSN();
+                    } else {
+                        TransactionTableEntry tte = new TransactionTableEntry(newTransaction.apply(transNum));
+                        tte.lastLSN = logRecord.getLSN();
+                        transactionTable.put(transNum, tte);
+                    }
+                }
+
+                switch (logType) {
+                    case UPDATE_PAGE:
+                    case UNDO_UPDATE_PAGE:
+                        long pageNum1 = logRecord.getPageNum().get();
+                        if (!dirtyPageTable.containsKey(pageNum1) || dirtyPageTable.get(pageNum1) > logRecord.getLSN()) {
+                            dirtyPageTable.put(pageNum1, logRecord.getLSN());
+                        }
+                        break;
+                    case FREE_PAGE:
+                    case UNDO_ALLOC_PAGE:
+                        long pageNum2 = logRecord.getPageNum().get();
+                        dirtyPageTable.remove(pageNum2);
+                        break;
+                    case END_TRANSACTION:
+                        long transNum1 = logRecord.getTransNum().get();
+                        transactionTable.get(transNum1).transaction.cleanup();
+                        transactionTable.get(transNum1).transaction.setStatus(Transaction.Status.COMPLETE);
+                        transactionTable.remove(transNum1);
+                        endedTransactions.add(transNum1);
+                        break;
+                    case COMMIT_TRANSACTION:
+                        long transNum2 = logRecord.getTransNum().get();
+                        transactionTable.get(transNum2).transaction.setStatus(Transaction.Status.COMMITTING);
+                        break;
+                    case ABORT_TRANSACTION:
+                        long transNum3 = logRecord.getTransNum().get();
+                        transactionTable.get(transNum3).transaction.setStatus(Transaction.Status.RECOVERY_ABORTING);
+                        break;
+                    default:
+                        break;
+                }
+            }
+        }
+
+        Iterator<Map.Entry<Long, TransactionTableEntry>> transactionTableIterator = transactionTable.entrySet().iterator();
+        while (transactionTableIterator.hasNext()) {
+            Map.Entry<Long, TransactionTableEntry> entry = transactionTableIterator.next();
+            TransactionTableEntry tte = entry.getValue();
+            switch (tte.transaction.getStatus()) {
+                case COMMITTING:
+                    tte.transaction.cleanup();
+                    tte.transaction.setStatus(Transaction.Status.COMPLETE);
+                    EndTransactionLogRecord endTransactionLogRecord = new EndTransactionLogRecord(tte.transaction.getTransNum(),
+                            tte.lastLSN);
+                    logManager.appendToLog(endTransactionLogRecord);
+                    tte.lastLSN = endTransactionLogRecord.getLSN();
+                    transactionTableIterator.remove();
+                    break;
+                case RUNNING:
+                    tte.transaction.setStatus(Transaction.Status.RECOVERY_ABORTING);
+                    AbortTransactionLogRecord abortTransactionLogRecord = new AbortTransactionLogRecord(tte.transaction.getTransNum(),
+                            tte.lastLSN);
+                    logManager.appendToLog(abortTransactionLogRecord);
+                    tte.lastLSN = abortTransactionLogRecord.getLSN();
+                    break;
+                default:
+                    break;
+            }
+        }
+
         return;
     }
 
