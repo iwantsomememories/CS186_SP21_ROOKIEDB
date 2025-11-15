@@ -8,6 +8,7 @@ import edu.berkeley.cs186.database.memory.BufferManager;
 import edu.berkeley.cs186.database.memory.Page;
 import edu.berkeley.cs186.database.recovery.records.*;
 
+import java.io.ObjectInputFilter;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
@@ -608,7 +609,11 @@ public class ARIESRecoveryManager implements RecoveryManager {
                     if (!endedTransactions.contains(entry.getKey())) {
                         if (!transactionTable.containsKey(entry.getKey())) {
                             TransactionTableEntry tte = new TransactionTableEntry(newTransaction.apply(entry.getKey()));
-                            tte.transaction.setStatus(entry.getValue().getFirst());
+                            if (entry.getValue().getFirst() == Transaction.Status.ABORTING) {
+                                tte.transaction.setStatus(Transaction.Status.RECOVERY_ABORTING);
+                            } else {
+                                tte.transaction.setStatus(entry.getValue().getFirst());
+                            }
                             tte.lastLSN = entry.getValue().getSecond();
                             transactionTable.put(entry.getKey(), tte);
                         } else {
@@ -784,6 +789,47 @@ public class ARIESRecoveryManager implements RecoveryManager {
      */
     void restartUndo() {
         // TODO(proj5): implement
+        PriorityQueue<Long> lastLSNsOfAbortTxn = new PriorityQueue<>((a, b) -> {
+            return b.compareTo(a);
+        });
+
+        for (Map.Entry<Long, TransactionTableEntry> entry : transactionTable.entrySet()) {
+            if (entry.getValue().transaction.getStatus().equals(Transaction.Status.RECOVERY_ABORTING)) {
+                lastLSNsOfAbortTxn.add(entry.getValue().lastLSN);
+            }
+        }
+
+        while (!lastLSNsOfAbortTxn.isEmpty()) {
+            long LSN = lastLSNsOfAbortTxn.poll();
+            LogRecord logRecord = logManager.fetchLogRecord(LSN);
+
+            TransactionTableEntry tte = transactionTable.get(logRecord.getTransNum().get());
+            if (logRecord.isUndoable()) {
+                LogRecord clrLogRecord = logRecord.undo(tte.lastLSN);
+                logManager.appendToLog(clrLogRecord);
+                tte.lastLSN = clrLogRecord.getLSN();
+                clrLogRecord.redo(this, diskSpaceManager, bufferManager);
+            }
+
+            if (logRecord.getUndoNextLSN().isPresent()) {
+                lastLSNsOfAbortTxn.add(logRecord.getUndoNextLSN().get());
+            } else {
+                long prevLSN = logRecord.getPrevLSN().orElse(0L);
+                if (prevLSN == 0) {
+                    tte.transaction.cleanup();
+                    tte.transaction.setStatus(Transaction.Status.COMPLETE);
+                    EndTransactionLogRecord endTransactionLogRecord = new EndTransactionLogRecord(tte.transaction.getTransNum(),
+                            tte.lastLSN);
+                    logManager.appendToLog(endTransactionLogRecord);
+                    tte.lastLSN = endTransactionLogRecord.getLSN();
+
+                    transactionTable.remove(tte.transaction.getTransNum());
+                } else {
+                    lastLSNsOfAbortTxn.add(prevLSN);
+                }
+            }
+        }
+
         return;
     }
 
